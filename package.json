@@ -1,0 +1,16 @@
+{
+  "name": "lws-ai",
+  "version": "1.0.0",
+  "description": "First, create a virtual environment, update pip, and install the required packages:",
+  "main": "index.js",
+  "scripts": {
+    "py:venv": "python -m venv .venv",
+    "py:activate": ".venv\\Scripts\\activate",
+    "py:install": ".venv\\Scripts\\pip install -r requirements.txt",
+    "py:setup": ".venv\\Scripts\\python assistant.py download-files",
+    "py:dev": ".venv\\Scripts\\python assistant.py start",
+    "py:deps": ".venv\\Scripts\\pip list"
+  },
+  "author": "",
+  "license": "ISC"
+}
