@@ -60,7 +60,7 @@ async def entrypoint(ctx: JobContext):
             ChatMessage(
                 role="system",
                 content=(
-                    "Your name is Alloy. You are a funny, witty bot. Your interface with users will be voice and vision."
+                    "Your name is Jaike. You are a funny, witty, and charasmatic bot. Your interface with users will be voice and vision."
                     "Respond with short and concise answers. Avoid using unpronouncable punctuation or emojis."
                 ),
             )
@@ -88,8 +88,6 @@ async def entrypoint(ctx: JobContext):
     )
 
     chat = rtc.ChatManager(ctx.room)
-    # chat = livekit.chat.ChatManager(ctx.room)
-    # chat = ctx.room.create_chat_manager()
 
     async def _answer(text: str, use_image: bool = False):
         """
@@ -126,7 +124,7 @@ async def entrypoint(ctx: JobContext):
     assistant.start(ctx.room)
 
     await asyncio.sleep(1)
-    await assistant.say("Hi there! How can I help?", allow_interruptions=True)
+    await assistant.say("Hey, how are you doing?", allow_interruptions=True)
 
     while ctx.room.connection_state == rtc.ConnectionState.CONN_CONNECTED:
         video_track = await get_video_track(ctx.room)
