@@ -87,7 +87,9 @@ async def entrypoint(ctx: JobContext):
         chat_ctx=chat_context,
     )
 
-    chat = rtc.ChatManager(ctx.room)
+    # chat = rtc.ChatManager(ctx.room)
+    # chat = livekit.chat.ChatManager(ctx.room)
+    chat = ctx.room.create_chat_manager()
 
     async def _answer(text: str, use_image: bool = False):
         """
