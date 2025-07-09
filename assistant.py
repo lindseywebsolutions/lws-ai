@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from dotenv import load_dotenv
 from typing import Any
 from livekit import rtc
@@ -80,6 +81,25 @@ class AssistantFnc(llm.FunctionContext):
         if publication:
             publication.set_subscribed(False)
 
+def get_llm_model():
+    """Get the LLM model based on environment settings."""
+    llm_provider = os.getenv("LLM_PROVIDER", "openai").lower()
+    
+    if llm_provider == "ollama":
+        ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
+        ollama_model = os.getenv("OLLAMA_MODEL", "deepseek-r1")
+        # Update to use OpenAI plugin's with_ollama method
+        logger.info(f"Using Ollama LLM with model {ollama_model} at {ollama_url}/v1")
+        return openai.LLM.with_ollama(
+            model=ollama_model,
+            base_url=f"{ollama_url}/v1"
+        )
+    else:
+        # Default to OpenAI
+        openai_model = os.getenv("OPENAI_MODEL", "gpt-4o")
+        logger.info(f"Using OpenAI LLM with model {openai_model}")
+        return openai.LLM(model=openai_model)
+
 async def entrypoint(ctx: JobContext):
     """Main entry point for the voice assistant job."""
     try:
@@ -99,11 +119,22 @@ async def entrypoint(ctx: JobContext):
             if track.kind == rtc.TrackKind.KIND_VIDEO:
                 asyncio.create_task(fnc_ctx.process_video_stream(track))
 
+        # Get LLM model based on environment settings
+        llm_model = get_llm_model()
+        
+        # Initialize TTS based on environment variable
+        tts_provider = os.getenv("TTS_PROVIDER", "openai").lower()
+        if tts_provider == "openai":
+            tts = openai.TTS()
+        else:
+            # You could add other TTS providers here
+            tts = openai.TTS()  # Default to OpenAI
+
         assistant = VoiceAssistant(
             vad=silero.VAD.load(),
             stt=deepgram.STT(),
-            llm=openai.LLM(model="gpt-4o"),
-            tts=openai.TTS(),
+            llm=llm_model,
+            tts=tts,
             chat_ctx=initial_ctx,
             fnc_ctx=fnc_ctx,
         )
