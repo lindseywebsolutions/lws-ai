@@ -88,12 +88,24 @@ def get_llm_model():
     if llm_provider == "ollama":
         ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
         ollama_model = os.getenv("OLLAMA_MODEL", "deepseek-r1")
-        # Update to use OpenAI plugin's with_ollama method
-        logger.info(f"Using Ollama LLM with model {ollama_model} at {ollama_url}/v1")
-        return openai.LLM.with_ollama(
-            model=ollama_model,
-            base_url=f"{ollama_url}/v1"
-        )
+        logger.info(f"Using Ollama LLM with model {ollama_model} at {ollama_url}")
+        
+        # Make sure the base URL is correct - we don't want to add /v1 if it's already there
+        base_url = ollama_url
+        if not base_url.endswith("/v1"):
+            base_url = f"{base_url}/v1"
+            
+        try:
+            return openai.LLM.with_ollama(
+                model=ollama_model,
+                base_url=base_url
+            )
+        except Exception as e:
+            logger.error(f"Error initializing Ollama LLM: {e}")
+            logger.warning("Falling back to OpenAI LLM")
+            # Fall back to OpenAI if Ollama initialization fails
+            openai_model = os.getenv("OPENAI_MODEL", "gpt-4o")
+            return openai.LLM(model=openai_model)
     else:
         # Default to OpenAI
         openai_model = os.getenv("OPENAI_MODEL", "gpt-4o")
