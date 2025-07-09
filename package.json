@@ -10,7 +10,9 @@
     "py:setup": ".venv\\Scripts\\python assistant.py download-files",
     "py:dev": ".venv\\Scripts\\python assistant.py start",
     "py:deps": ".venv\\Scripts\\pip list",
-    "py:freeze": ".venv\\Scripts\\pip freeze > requirements.txt"
+    "py:freeze": ".venv\\Scripts\\pip freeze > requirements.txt",
+    "py:test-ollama": ".venv\\Scripts\\python -c \"import requests; print(requests.get('http://100.97.211.72:11434/api/tags').json())\"",
+    "py:test-models": ".venv\\Scripts\\python -c \"import requests; models = requests.get('http://100.97.211.72:11434/api/tags').json()['models']; print('\\n'.join([m['name'] for m in models]))\""
   },
   "author": "",
   "license": "ISC"
