@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 from dotenv import load_dotenv
-from typing import Any
+from typing import Any, Optional
 from livekit import rtc
 from livekit.agents import AutoSubscribe, JobContext, WorkerOptions, cli, llm
 from livekit.agents.voice_assistant import VoiceAssistant
@@ -97,19 +97,11 @@ def get_llm_model():
             base_url = f"{base_url}/v1"
             
         try:
-            # Try with function calling disabled if using deepseek-r1
-            if "deepseek" in ollama_model.lower():
-                logger.warning("DeepSeek model detected. Disabling function calling as it's not supported.")
-                return openai.LLM.with_ollama(
-                    model=ollama_model,
-                    base_url=base_url,
-                    tools=None  # Disable function calling/tools
-                )
-            else:
-                return openai.LLM.with_ollama(
-                    model=ollama_model,
-                    base_url=base_url
-                )
+            # Use llama3 model which supports function calling
+            return openai.LLM.with_ollama(
+                model=ollama_model,
+                base_url=base_url
+            )
         except Exception as e:
             logger.error(f"Error initializing Ollama LLM: {e}")
             logger.warning("Falling back to OpenAI LLM")
@@ -123,23 +115,48 @@ def get_llm_model():
         logger.info(f"Using OpenAI LLM with model {openai_model}")
         return openai.LLM(model=openai_model)
 
-def get_tts():
-    """Get TTS based on environment settings and handle fallbacks."""
-    tts_provider = os.getenv("TTS_PROVIDER", "openai").lower()
+class TextModeAssistant:
+    """A text-only assistant that works without TTS."""
     
-    try:
-        if tts_provider == "openai":
-            # Try with a model that might be available on free tier
-            return openai.TTS(model="tts-1")
-        else:
-            # Add other TTS providers here if needed
-            logger.warning(f"TTS provider {tts_provider} not recognized, using default.")
-            return openai.TTS(model="tts-1")
-    except Exception as e:
-        logger.error(f"Error initializing TTS: {e}")
-        logger.warning("TTS initialization failed. Voice responses will not work.")
-        # You could implement a fallback text-only mode here
-        return None
+    def __init__(self, room, llm_model, chat_ctx, fnc_ctx=None):
+        self.room = room
+        self.llm_model = llm_model
+        self.chat_ctx = chat_ctx
+        self.fnc_ctx = fnc_ctx
+        
+    def start(self, room):
+        """Start listening for messages"""
+        room.on("data_received", self._on_data_received)
+        logger.info("Text-only assistant mode activated")
+    
+    async def _on_data_received(self, data, participant):
+        """Handle incoming text messages"""
+        try:
+            if data.topic == "lk.chat":
+                message = data.data.decode('utf-8')
+                logger.info(f"Received message: {message}")
+                
+                # Add user message to chat context
+                self.chat_ctx.append(role="user", text=message)
+                
+                # Generate response
+                response = await self.llm_model.generate(
+                    chat_ctx=self.chat_ctx,
+                    fnc_ctx=self.fnc_ctx
+                )
+                
+                # Process response
+                response_text = response.text
+                self.chat_ctx.append(role="assistant", text=response_text)
+                
+                # Send text response
+                await self.room.local_participant.publish_data(
+                    response_text.encode('utf-8'), 
+                    topic="lk.chat"
+                )
+                logger.info(f"Sent response: {response_text}")
+        except Exception as e:
+            logger.error(f"Error handling message: {e}")
 
 async def entrypoint(ctx: JobContext):
     """Main entry point for the voice assistant job."""
@@ -148,7 +165,7 @@ async def entrypoint(ctx: JobContext):
         initial_ctx = llm.ChatContext().append(
             role="system",
             text=(
-                "You are Linz, a voice and vision assistant created by Lindsey Web Solutions. Your interface with users will be voice and vision. "
+                "You are Linz, a voice and vision assistant created by Lindsey Web Solutions. "
                 "You should use short and concise responses. If the user asks you to use their camera, use the capture_and_add_image function."
             ),
         )
@@ -163,31 +180,65 @@ async def entrypoint(ctx: JobContext):
         # Get LLM model based on environment settings
         llm_model = get_llm_model()
         
-        # Initialize TTS with fallback handling
-        tts = get_tts()
-
-        # Check if TTS initialization failed
-        if tts is None:
-            logger.warning("Running in text-only mode due to TTS initialization failure")
-            # Implement text-only mode here if needed
-
-        assistant = VoiceAssistant(
-            vad=silero.VAD.load(),
-            stt=deepgram.STT(),
-            llm=llm_model,
-            tts=tts if tts else openai.TTS(model="tts-1-hd"),  # Try with a different model as fallback
-            chat_ctx=initial_ctx,
-            fnc_ctx=fnc_ctx,
-        )
-
-        assistant.start(ctx.room)
-        await asyncio.sleep(1)
+        # Determine if we should use voice or text-only mode
+        use_text_only = os.getenv("TEXT_ONLY_MODE", "false").lower() == "true"
         
-        try:
-            await assistant.say("Hey, I'm online! How can I assist you?", allow_interruptions=True)
-        except Exception as e:
-            logger.error(f"Error in initial greeting: {e}")
-            # Continue without voice if TTS fails
+        if use_text_only:
+            logger.info("Starting in text-only mode (voice disabled)")
+            assistant = TextModeAssistant(ctx.room, llm_model, initial_ctx, fnc_ctx)
+            assistant.start(ctx.room)
+            
+            # Send welcome message
+            await ctx.room.local_participant.publish_data(
+                "Hey, I'm online! How can I assist you? (Text-only mode)".encode('utf-8'), 
+                topic="lk.chat"
+            )
+        else:
+            # Try to initialize voice assistant with fallback to text-only mode
+            try:
+                tts = openai.TTS(model="tts-1")
+                
+                assistant = VoiceAssistant(
+                    vad=silero.VAD.load(),
+                    stt=deepgram.STT(),
+                    llm=llm_model,
+                    tts=tts,
+                    chat_ctx=initial_ctx,
+                    fnc_ctx=fnc_ctx,
+                )
+                
+                assistant.start(ctx.room)
+                await asyncio.sleep(1)
+                
+                try:
+                    await assistant.say("Hey, I'm online! How can I assist you?", allow_interruptions=True)
+                    logger.info("Voice assistant started successfully")
+                except Exception as e:
+                    logger.error(f"Error in initial greeting: {e}")
+                    logger.warning("Switching to text-only mode due to TTS error")
+                    
+                    # Fall back to text-only mode
+                    text_assistant = TextModeAssistant(ctx.room, llm_model, initial_ctx, fnc_ctx)
+                    text_assistant.start(ctx.room)
+                    
+                    # Send welcome message
+                    await ctx.room.local_participant.publish_data(
+                        "Hey, I'm online! How can I assist you? (Voice assistant failed, using text-only mode)".encode('utf-8'), 
+                        topic="lk.chat"
+                    )
+            except Exception as e:
+                logger.error(f"Error initializing voice assistant: {e}")
+                logger.warning("Falling back to text-only mode")
+                
+                # Fall back to text-only mode
+                text_assistant = TextModeAssistant(ctx.room, llm_model, initial_ctx, fnc_ctx)
+                text_assistant.start(ctx.room)
+                
+                # Send welcome message
+                await ctx.room.local_participant.publish_data(
+                    "Hey, I'm online! How can I assist you? (Voice assistant failed, using text-only mode)".encode('utf-8'), 
+                    topic="lk.chat"
+                )
 
         while True:
             await asyncio.sleep(10)
