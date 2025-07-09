@@ -9,7 +9,8 @@
     "py:install": ".venv\\Scripts\\pip install -r requirements.txt",
     "py:setup": ".venv\\Scripts\\python assistant.py download-files",
     "py:dev": ".venv\\Scripts\\python assistant.py start",
-    "py:deps": ".venv\\Scripts\\pip list"
+    "py:deps": ".venv\\Scripts\\pip list",
+    "py:freeze": ".venv\\Scripts\\pip freeze > requirements.txt"
   },
   "author": "",
   "license": "ISC"
