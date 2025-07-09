@@ -26,4 +26,15 @@ $ python3 assistant.py download-files
 $ python3 assistant.py start
 ```
 
+## Using Ollama
+
+If you want to use Ollama with the DeepSeek-R1 model:
+
+1. Install Ollama following the instructions at https://ollama.com/
+2. Pull the DeepSeek model: `ollama pull deepseek-r1`
+3. Make sure Ollama is running: Ollama runs as a service on port 11434
+4. Set `LLM_PROVIDER=ollama` in your .env file
+
+## Viewing
+
 Finally, you can load the [hosted playground](https://agents-playground.livekit.io/) and connect it.
