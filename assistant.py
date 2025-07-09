@@ -87,7 +87,8 @@ def get_llm_model():
     
     if llm_provider == "ollama":
         ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
-        ollama_model = os.getenv("OLLAMA_MODEL", "deepseek-r1")
+        # Change model to one that supports function calling/tools
+        ollama_model = os.getenv("OLLAMA_MODEL", "llama3")
         logger.info(f"Using Ollama LLM with model {ollama_model} at {ollama_url}")
         
         # Make sure the base URL is correct - we don't want to add /v1 if it's already there
@@ -96,21 +97,49 @@ def get_llm_model():
             base_url = f"{base_url}/v1"
             
         try:
-            return openai.LLM.with_ollama(
-                model=ollama_model,
-                base_url=base_url
-            )
+            # Try with function calling disabled if using deepseek-r1
+            if "deepseek" in ollama_model.lower():
+                logger.warning("DeepSeek model detected. Disabling function calling as it's not supported.")
+                return openai.LLM.with_ollama(
+                    model=ollama_model,
+                    base_url=base_url,
+                    tools=None  # Disable function calling/tools
+                )
+            else:
+                return openai.LLM.with_ollama(
+                    model=ollama_model,
+                    base_url=base_url
+                )
         except Exception as e:
             logger.error(f"Error initializing Ollama LLM: {e}")
             logger.warning("Falling back to OpenAI LLM")
             # Fall back to OpenAI if Ollama initialization fails
-            openai_model = os.getenv("OPENAI_MODEL", "gpt-4o")
+            openai_model = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
             return openai.LLM(model=openai_model)
     else:
         # Default to OpenAI
-        openai_model = os.getenv("OPENAI_MODEL", "gpt-4o")
+        # Use gpt-3.5-turbo if API key is not valid for gpt-4o
+        openai_model = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
         logger.info(f"Using OpenAI LLM with model {openai_model}")
         return openai.LLM(model=openai_model)
+
+def get_tts():
+    """Get TTS based on environment settings and handle fallbacks."""
+    tts_provider = os.getenv("TTS_PROVIDER", "openai").lower()
+    
+    try:
+        if tts_provider == "openai":
+            # Try with a model that might be available on free tier
+            return openai.TTS(model="tts-1")
+        else:
+            # Add other TTS providers here if needed
+            logger.warning(f"TTS provider {tts_provider} not recognized, using default.")
+            return openai.TTS(model="tts-1")
+    except Exception as e:
+        logger.error(f"Error initializing TTS: {e}")
+        logger.warning("TTS initialization failed. Voice responses will not work.")
+        # You could implement a fallback text-only mode here
+        return None
 
 async def entrypoint(ctx: JobContext):
     """Main entry point for the voice assistant job."""
@@ -134,26 +163,31 @@ async def entrypoint(ctx: JobContext):
         # Get LLM model based on environment settings
         llm_model = get_llm_model()
         
-        # Initialize TTS based on environment variable
-        tts_provider = os.getenv("TTS_PROVIDER", "openai").lower()
-        if tts_provider == "openai":
-            tts = openai.TTS()
-        else:
-            # You could add other TTS providers here
-            tts = openai.TTS()  # Default to OpenAI
+        # Initialize TTS with fallback handling
+        tts = get_tts()
+
+        # Check if TTS initialization failed
+        if tts is None:
+            logger.warning("Running in text-only mode due to TTS initialization failure")
+            # Implement text-only mode here if needed
 
         assistant = VoiceAssistant(
             vad=silero.VAD.load(),
             stt=deepgram.STT(),
             llm=llm_model,
-            tts=tts,
+            tts=tts if tts else openai.TTS(model="tts-1-hd"),  # Try with a different model as fallback
             chat_ctx=initial_ctx,
             fnc_ctx=fnc_ctx,
         )
 
         assistant.start(ctx.room)
         await asyncio.sleep(1)
-        await assistant.say("Hey, I'm online! How can I assist you?", allow_interruptions=True)
+        
+        try:
+            await assistant.say("Hey, I'm online! How can I assist you?", allow_interruptions=True)
+        except Exception as e:
+            logger.error(f"Error in initial greeting: {e}")
+            # Continue without voice if TTS fails
 
         while True:
             await asyncio.sleep(10)
