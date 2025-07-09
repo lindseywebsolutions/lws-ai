@@ -87,7 +87,7 @@ async def entrypoint(ctx: JobContext):
         initial_ctx = llm.ChatContext().append(
             role="system",
             text=(
-                "You are a voice assistant created by LiveKit. Your interface with users will be voice. "
+                "You are Linz, a voice and vision assistant created by Lindsey Web Solutions. Your interface with users will be voice and vision. "
                 "You should use short and concise responses. If the user asks you to use their camera, use the capture_and_add_image function."
             ),
         )
@@ -110,7 +110,7 @@ async def entrypoint(ctx: JobContext):
 
         assistant.start(ctx.room)
         await asyncio.sleep(1)
-        await assistant.say("Hey, how can I help you today?", allow_interruptions=True)
+        await assistant.say("Hey, I'm online! How can I assist you?", allow_interruptions=True)
 
         while True:
             await asyncio.sleep(10)
